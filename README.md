@@ -32,7 +32,16 @@ Example :
 
 Implement the algorithm of Symbolic Model Checking, McMillan 1993, section 2.4.
 
-Supports the operators :
+The syntax of formulae is described at [pytl](https://github.com/fpom/pytl) :
+    
+    phi ::= quantifier unarymod phi
+         |  quantifier phi binarymod phi
+         |  phi boolop phi
+         |  "~" phi
+         |  "(" phi ")"
+         |  atom
+
+Supported operators :
  - unary : `EX, EF, EG, AX, AF, AG`
  - binary : `EU, EW, ER, AU, AW, AR`
 
@@ -45,6 +54,6 @@ An additional argument must be given at initialization, representing the fairnes
  - a list of strings, Phi objects or sdd, representing the list of fairness constraints : [f1, f2,...]
  - a single string, Phi or sdd, representing a single fairness constraint
 
-Supports the operators :
+Supported operators :
  - unary : `EX, EF, EG, AX, AF, AG`
  - binary : `EU, AU`
