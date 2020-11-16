@@ -125,7 +125,7 @@ class FairCTL_model_checker(CTL_model_checker):
             print("The list of fairness constraints is empty, you should used the CTL_model_checker instead")
 
         def fairness_preprocess(f):
-            if isinstance(f, str):
+            if isinstance(f, str) or isinstance(f, Phi):
                 return CTL_model_checker(universe, pred).check(f)
             elif isinstance(f, sdd):
                 return f
