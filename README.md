@@ -24,17 +24,21 @@ Example :
         formula = "AF E(Sd U Fg & Te)"
         CTL_mc = CTL_model_checker(v.g.reachable, v.g.m.pred())
         FairCTL_mc = FairCTL_model_checker(v.g.reachable, v.g.m.pred(),["~Ac"])
-        v.g.initial<=CTL_mc.check(formula)
-        v.g.initial<=FairCTL_mc.check(formula)
+        print(v.g.initial<=CTL_mc.check(formula))
+        print(v.g.initial<=FairCTL_mc.check(formula))
 
 
 ### CTL
 
+Implement the algorithm of Symbolic Model Checking, McMillan 1993, section 2.4.
+
 Supports the operators :
- - unarry : `EX, EF, EG, AX, AF, AG`
+ - unary : `EX, EF, EG, AX, AF, AG`
  - binary : `EU, EW, ER, AU, AW, AR`
 
 ### Fair CTL
+
+Implement the algorithm of Symbolic Model Checking, McMillan 1993, section 6.4 and Symbolic model checking: 1020 states and beyond, Burch et al 1992, section 6.2.
 
 The evaluation of the formula is restricter to the trajectoriers verifying fairness constraints of the form `AND([GF f for f in fairness])`.
 An additional argument must be given at initialization, representing the fairness constraints :
@@ -42,5 +46,5 @@ An additional argument must be given at initialization, representing the fairnes
  - a single string, Phi or sdd, representing a single fairness constraint
 
 Supports the operators :
- - unarry : `EX, EF, EG, AX, AF, AG`
+ - unary : `EX, EF, EG, AX, AF, AG`
  - binary : `EU, AU`
