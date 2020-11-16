@@ -15,6 +15,16 @@ def fixpoint(fonction, start):
 ####################### CTL #######################
       
 class CTL_model_checker(object):
+    """
+    Object which can symbolically compute the subset of the universe where a given CTL formula is satisfied.
+    
+    Attributes :
+    - variables : the list of the variables
+    
+    Methods :
+    - check(formula) : returns the sdd representing the subset of the universe where the input formula is satisfied
+    - atom(var) : returns the sdd representing the subset of the universe where var is True
+    """
     def __init__ (self, universe, pred):
         """
         Input :
@@ -24,6 +34,8 @@ class CTL_model_checker(object):
         # TODO : mettre en cache les output de phi2sdd ?
         assert isinstance(universe, sdd), "universe must be of type sdd"
         assert isinstance(pred, shom), "pred must be of type shom"
+        
+        self.logic = "CTL"
 
         self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
 
@@ -60,7 +72,11 @@ class CTL_model_checker(object):
     @lru_cache(maxsize=None) # si la version de python etait 3.9 on pourrait utiliser functools.cache directement
     def atom(self, var):
         """
+        Input :
+        - var : string
         
+        Output :
+        The sdd representing the subset of the universe where var is True.
         """
         assert var in self.variables, var + " is not a variable"
         d = ddd.one()
@@ -93,10 +109,17 @@ class CTL_model_checker(object):
         elif phi.kind in self.binarymod:
             return self.binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
         else:
-            raise ValueError(repr(phi) + "is not a CTL sub formula")
+            raise ValueError(repr(phi) + "is not a " + self.logic + " CTL sub formula")
 
             
     def check(self, formula):
+        """
+        Input :
+        - formula : string or tl.Phi object
+        
+        Output :
+        The sdd representing the subset of the universe where the formula is satisfied.
+        """
         assert isinstance(formula , str) or isinstance(formula , Phi), "The formula given in input must be a string or a parsed formula"
         if isinstance(formula , str):
             formula = parse(formula).ctl()
@@ -115,6 +138,7 @@ class FairCTL_model_checker(CTL_model_checker):
         - fairness is a list of CTL formulae (or sdd) to be used as fairness constraints (the fair trajectory must satisfy and[GF f for f in fairness])
         """
         super().__init__(universe, pred)
+        self.logic = "Fair CTL"
         if isinstance(fairness, list):
             pass
         elif isinstance(fairness, str) or isinstance(fairness, sdd) :
