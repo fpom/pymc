@@ -165,5 +165,27 @@ class ACTL_model_checker(CTL_model_checker):
 
 ####################### ARCTL #######################
 
+from itertools import compress
+from functools import reduce
+from ddd import shom
+
+def build_dict_labeled_pred(v):
+    # v.model.spec.rules contains a list of Rule objects (ecco.rr.st.py) representing the rules
+    # v.g.m.transitions() returns a dict of {"R15" : shom}
+    
+    res = dict()
+    labels = list(set([r.label for r in v.model.spec.rules]))# build a list of unique value of Rule labels
+    labels.sort() # sort this list for better display
+    for label in labels:
+        # get the indexes of the rules labeld with label
+        rules_index = list(compress(["R"+str(r.num) for r in m.model.spec.rules], [r.label == label for r in m.model.spec.rules]))
+        # get the shoms corresponding to those indexes
+        shoms = [m.g.m.transitions()[i] for i in rules_index]
+        # build the union of those shoms
+        succ =  reduce(shom.__or__, shoms, shom.empty())
+        res[label] = succ.invert(v.g.reachable)
+    return res
+
 class ARCTL_model_checker(CTL_model_checker):
+  	# pred doit etre un dict{label : pred_label}
     pass
