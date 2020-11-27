@@ -15,6 +15,16 @@ def fixpoint(fonction, start):
 ####################### CTL #######################
       
 class CTL_model_checker(object):
+    """
+    Object which can symbolically compute the subset of the universe where a given CTL formula is satisfied.
+    
+    Attributes :
+    - variables : the list of the variables
+    
+    Methods :
+    - check(formula) : returns the sdd representing the subset of the universe where the input formula is satisfied
+    - atom(var) : returns the sdd representing the subset of the universe where var is True
+    """
     def __init__ (self, universe, pred):
         """
         Input :
@@ -25,6 +35,8 @@ class CTL_model_checker(object):
         assert isinstance(universe, sdd), "universe must be of type sdd"
         assert isinstance(pred, shom), "pred must be of type shom"
 
+        self.logic = "CTL"
+        
         self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
 
         self.CTL_True = universe
@@ -32,7 +44,7 @@ class CTL_model_checker(object):
         self.neg = lambda phi : self.CTL_True - phi 
         self.gfp = lambda fonction : fixpoint(fonction, self.CTL_True)
         self.lfp = lambda fonction : fixpoint(fonction, self.CTL_False)
-		
+
         self.EX = pred & universe
         self.deadlock = self.neg(self.EX(self.CTL_True))
         self.EF = lambda phi : self.lfp(lambda Z : phi | self.EX(Z))
@@ -41,7 +53,7 @@ class CTL_model_checker(object):
         self.EW = lambda phi1, phi2 : self.gfp(lambda Z : phi2 | (phi1 & (self.EX(Z) | self.deadlock)))
         self.ER = lambda phi1, phi2 : self.gfp(lambda Z : phi2 & (phi1 | self.EX(Z) | self.deadlock))       
         self.EM = lambda phi1, phi2 : self.lfp(lambda Z : phi2 & (phi1 | self.EX(Z)))
-		
+
         self.AX = lambda phi : self.EX(self.CTL_True) & self.neg(self.EX(self.neg(phi)))
         self.AF = lambda phi : self.lfp(lambda Z : phi | self.AX(Z))
         self.AG = lambda phi : self.gfp(lambda Z : phi & (self.AX(Z) | self.deadlock))
@@ -56,7 +68,11 @@ class CTL_model_checker(object):
     @lru_cache(maxsize=None) # si la version de python etait 3.9 on pourrait utiliser functools.cache directement
     def atom(self, var):
         """
+        Input :
+        - var : string
         
+        Output :
+        The sdd representing the subset of the universe where var is True.
         """
         assert var in self.variables, var + " is not a variable"
         d = ddd.one()
@@ -89,10 +105,17 @@ class CTL_model_checker(object):
         elif phi.kind in self.binarymod:
             return self.binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
         else:
-            raise ValueError(repr(phi) + "is not a CTL sub formula")
+            raise ValueError(repr(phi) + "is not a " + self.logic + " sub formula")
 
             
     def check(self, formula):
+        """
+        Input :
+        - formula : string or tl.Phi object
+        
+        Output :
+        The sdd representing the subset of the universe where the formula is satisfied.
+        """
         assert isinstance(formula , str) or isinstance(formula , Phi), "The formula given in input must be a string or a parsed formula"
         if isinstance(formula , str):
             formula = parse(formula).ctl()
@@ -142,7 +165,7 @@ class FairCTL_model_checker(CTL_model_checker):
         self.EW_fair = lambda phi1, phi2 : self.EU_fair(phi1, phi2) | self.EG_fair(phi1)
         self.ER_fair = lambda phi1, phi2 : self.EW_fair(phi2, phi1 & phi2)
         self.EM_fair = self.EM
-		
+
         self.AX_fair = self.AX
         self.AF_fair = lambda phi : self.neg(self.EG_fair(self.neg(phi)))
         self.AG_fair = lambda phi : self.neg(self.EF_fair(self.neg(phi)))
@@ -165,27 +188,69 @@ class ACTL_model_checker(CTL_model_checker):
 
 ####################### ARCTL #######################
 
-from itertools import compress
-from functools import reduce
+import itertools 
+import functools 
 from ddd import shom
 
 def build_dict_labeled_pred(v):
     # v.model.spec.rules contains a list of Rule objects (ecco.rr.st.py) representing the rules
-    # v.g.m.transitions() returns a dict of {"R15" : shom}
+    # v.g.m.transitions() returns a dict of {string label : shom}
+    
+    # TODO : ajouter la gestion des contraintes (ca risque de causer beaucoup de problèmes parce que l'union des pred_alpha ne donnera pas pred à cause que ca ne fera pas l'union des contraintes)
     
     res = dict()
     labels = list(set([r.label for r in v.model.spec.rules]))# build a list of unique value of Rule labels
     labels.sort() # sort this list for better display
     for label in labels:
         # get the indexes of the rules labeld with label
-        rules_index = list(compress(["R"+str(r.num) for r in m.model.spec.rules], [r.label == label for r in m.model.spec.rules]))
+        rules_index = list(itertools.compress(["R"+str(r.num) for r in m.model.spec.rules], [r.label == label for r in m.model.spec.rules]))
         # get the shoms corresponding to those indexes
         shoms = [m.g.m.transitions()[i] for i in rules_index]
         # build the union of those shoms
-        succ =  reduce(shom.__or__, shoms, shom.empty())
+        succ =  functools.reduce(shom.__or__, shoms, shom.empty())
         res[label] = succ.invert(v.g.reachable)
     return res
 
 class ARCTL_model_checker(CTL_model_checker):
-  	# pred doit etre un dict{label : pred_label}
-    pass
+    # pred doit etre un dict{label : pred_label}
+    # juste appeler CTL_model_checker en lui donnant le shom correspondant à la formule d'action
+    def __init__ (self, universe, pred_dict):
+        """
+        Input :
+        - universe is a sdd representing the state space (for example v.g.reachable)
+        - pred is a dictionary associating transition label strings to shom representing the inverse of succ for this label (for exemple using build_dict_labeled_pred(v))
+        """
+        assert isinstance(pred_dict, dict), "pred_dict must be of type dict"
+        assert len(pred_dict) >= 1, "pred_dict must contain at least one element"
+        for e in pred_dict : # for each key of the dictionnary
+            assert isinstance(e, str), "every key of pred_dict must be of type string"
+            assert isinstance(pred_dict[e], shom), "every value of pred_dict must be of type shom"
+        
+        super().__init__(universe, functools.reduce(shom.__or__, pred_dict.values(), shom.empty()))
+        self.logic = "ARCTL"
+        self.pred_dict = pred_dict
+        
+    def build_pred(self, actions):
+        pass
+      
+    def check(self, formula):
+        """
+        Input :
+        - formula : string or tl.Phi object
+        
+        Output :
+        The sdd representing the subset of the universe where the formula is satisfied.
+        """
+        assert isinstance(formula , str) or isinstance(formula , Phi), "The formula given in input must be a string or a parsed formula"
+        if isinstance(formula , str):
+            formula = parse(formula).arctl()
+        return self._phi2sdd(formula)
+      
+    # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
+    def _phi2sdd(self, phi):
+        if phi.kind in self.unarymod and phi.actions:
+            return CTL_model_checker(self.CTL_True, self.build_pred(phi.actions)).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
+        elif phi.kind in self.binarymod and phi.actions:
+            return CTL_model_checker(self.CTL_True, self.build_pred(phi.actions)).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
+        else:
+            return super()._phi2sdd(Phi(phi.kind, [self._phi2ssd(child) for child in phi.children]))
