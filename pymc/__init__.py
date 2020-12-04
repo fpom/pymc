@@ -189,11 +189,20 @@ def build_labeled_succ(v):
     # v.g.m.transitions() returns a dict of {"R15" : shom}
     
     res = dict()
-    labels = list(set([r.label for r in v.model.spec.rules]))# build a list of unique value of Rule labels
+    labels = list(set([label for r in v.model.spec.rules if r.label for label in r.label.split(",")]))# build a list of unique value of Rule labels
     labels.sort() # sort this list for better display
+    # rules without labels
+    # get the indexes of the rules labeld with label
+    rules_index = [r.name() for r in v.model.spec.rules if not r.label]
+    # get the shoms corresponding to those indexes
+    shoms = [v.g.m.transitions()[i] for i in rules_index]
+    # build the union of those shoms
+    succ =  functools.reduce(shom.__or__, shoms, shom.empty())
+    res["None"] = succ
+    # rules with labels
     for label in labels:
         # get the indexes of the rules labeld with label
-        rules_index = [r.name() for r in v.model.spec.rules if r.label == label]
+        rules_index = [r.name() for r in v.model.spec.rules if r.label and label in r.label.split(",")]
         # get the shoms corresponding to those indexes
         shoms = [v.g.m.transitions()[i] for i in rules_index]
         # build the union of those shoms
