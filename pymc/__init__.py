@@ -25,15 +25,15 @@ class CTL_model_checker(object):
     - check(formula) : returns the sdd representing the subset of the universe where the input formula is satisfied
     - atom(var) : returns the sdd representing the subset of the universe where var is True
     """
-    def __init__ (self, universe, pred):
+    def __init__ (self, universe, succ):
         """
         Input :
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - pred is a shom representing the inverse of succ (for exemple v.g.m.pred())
+        - succ is a shom representing the transition relation (for exemple v.g.m.succ())
         """
         # TODO : mettre en cache les output de phi2sdd ?
         assert isinstance(universe, sdd), "universe must be of type sdd"
-        assert isinstance(pred, shom), "pred must be of type shom"
+        assert isinstance(succ, shom), "succ must be of type shom"
 
         self.logic = "CTL"
         
@@ -45,7 +45,7 @@ class CTL_model_checker(object):
         self.gfp = lambda fonction : fixpoint(fonction, self.CTL_True)
         self.lfp = lambda fonction : fixpoint(fonction, self.CTL_False)
 
-        self.EX = pred & universe
+        self.EX = succ.invert(universe)
         self.deadlock = self.neg(self.EX(self.CTL_True))
         self.EF = lambda phi : self.lfp(lambda Z : phi | self.EX(Z))
         self.EG = lambda phi : self.gfp(lambda Z : phi & (self.EX(Z) | self.deadlock))
@@ -126,14 +126,14 @@ class CTL_model_checker(object):
 ####################### Fair CTL #######################
       
 class FairCTL_model_checker(CTL_model_checker):
-    def __init__ (self, universe, pred, fairness):
+    def __init__ (self, universe, succ, fairness):
         """
         Input :
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - pred is a shom representing the inverse of succ (for exemple v.g.m.pred())
+        - succ is a shom representing the transition relation (for exemple v.g.m.succ())
         - fairness is a list of CTL formulae (or sdd) to be used as fairness constraints (the fair trajectory must satisfy and[GF f for f in fairness])
         """
-        super().__init__(universe, pred)
+        CTL_model_checker.__init__(self, universe, succ)
         if isinstance(fairness, list):
             pass
         elif isinstance(fairness, str) or isinstance(fairness, sdd) :
@@ -145,7 +145,7 @@ class FairCTL_model_checker(CTL_model_checker):
 
         def fairness_preprocess(f):
             if isinstance(f, str) or isinstance(f, Phi):
-                return CTL_model_checker(universe, pred).check(f)
+                return CTL_model_checker(universe, succ).check(f)
             elif isinstance(f, sdd):
                 return f
             else:
@@ -154,7 +154,7 @@ class FairCTL_model_checker(CTL_model_checker):
         self.fairness = [fairness_preprocess(f) for f in fairness]
         
         self.EG_fair = lambda phi : self.gfp(lambda Z : phi & (self.deadlock | self.EX(reduce(sdd.__and__ , [self.EU(Z, Z & f) for f in self.fairness], self.CTL_True))))
-        super().__init__(self.EG_fair(self.CTL_True), pred)        
+        CTL_model_checker.__init__(self, self.EG_fair(self.CTL_True), succ)        
         
         # EX, AX, EU, EF, EM do not need to be redefined once universe = EG_fair(True)
         self.EX_fair = self.EX
@@ -178,60 +178,66 @@ class FairCTL_model_checker(CTL_model_checker):
         self.binarymod = {"EU" : self.EU_fair, "ER" : self.ER_fair, "EW" : self.EW_fair, "EM" : self.EM_fair, "AU" : self.AU_fair, "AR" : self.AR_fair, "AW" : self.AW_fair, "AM" : self.AM_fair}
 
 
-        
-####################### ACTL #######################
-        
-class ACTL_model_checker(CTL_model_checker):
-    pass
-
-  
 
 ####################### ARCTL #######################
 
-import itertools 
 import functools 
 from ddd import shom
 
-def build_dict_labeled_pred(v):
+def build_labeled_succ(v):
     # v.model.spec.rules contains a list of Rule objects (ecco.rr.st.py) representing the rules
-    # v.g.m.transitions() returns a dict of {string label : shom}
-    
-    # TODO : ajouter la gestion des contraintes (ca risque de causer beaucoup de problèmes parce que l'union des pred_alpha ne donnera pas pred à cause que ca ne fera pas l'union des contraintes)
+    # v.g.m.transitions() returns a dict of {"R15" : shom}
     
     res = dict()
     labels = list(set([r.label for r in v.model.spec.rules]))# build a list of unique value of Rule labels
     labels.sort() # sort this list for better display
     for label in labels:
         # get the indexes of the rules labeld with label
-        rules_index = list(itertools.compress(["R"+str(r.num) for r in m.model.spec.rules], [r.label == label for r in m.model.spec.rules]))
+        rules_index = [r.name() for r in v.model.spec.rules if r.label == label]
         # get the shoms corresponding to those indexes
-        shoms = [m.g.m.transitions()[i] for i in rules_index]
+        shoms = [v.g.m.transitions()[i] for i in rules_index]
         # build the union of those shoms
         succ =  functools.reduce(shom.__or__, shoms, shom.empty())
-        res[label] = succ.invert(v.g.reachable)
+        res[label] = succ
     return res
 
+
 class ARCTL_model_checker(CTL_model_checker):
-    # pred doit etre un dict{label : pred_label}
-    # juste appeler CTL_model_checker en lui donnant le shom correspondant à la formule d'action
-    def __init__ (self, universe, pred_dict):
+    def __init__ (self, universe, succ_dict):
         """
         Input :
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - pred is a dictionary associating transition label strings to shom representing the inverse of succ for this label (for exemple using build_dict_labeled_pred(v))
+        - succ_dict is a dictionary associating transition label strings to shom representing the succ for this label (for exemple using build_dict_labeled_succ(v))
         """
-        assert isinstance(pred_dict, dict), "pred_dict must be of type dict"
-        assert len(pred_dict) >= 1, "pred_dict must contain at least one element"
-        for e in pred_dict : # for each key of the dictionnary
-            assert isinstance(e, str), "every key of pred_dict must be of type string"
-            assert isinstance(pred_dict[e], shom), "every value of pred_dict must be of type shom"
+        assert isinstance(succ_dict, dict), "succ_dict must be of type dict"
+        assert len(succ_dict) >= 1, "succ_dict must contain at least one element"
+        for e in succ_dict : # for each key of the dictionnary
+            assert isinstance(e, str), "every key of succ_dict must be of type string"
+            assert isinstance(succ_dict[e], shom), "every value of succ_dict must be of type shom"
         
-        super().__init__(universe, functools.reduce(shom.__or__, pred_dict.values(), shom.empty()))
+        self.succ_dict = succ_dict
+        self.succ = functools.reduce(shom.__or__, self.succ_dict.values(), shom.empty())
+        CTL_model_checker.__init__(self, universe, self.succ)
         self.logic = "ARCTL"
-        self.pred_dict = pred_dict
         
-    def build_pred(self, actions):
-        pass
+        
+    def build_succ_alpha(self, alpha):
+        if alpha.kind == 'bool':
+            assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
+            if alpha.value:
+                return self.succ
+            else:
+                return shom.empty()
+        elif alpha.kind == 'name':
+            return self.succ_dict[alpha.value]
+        elif alpha.kind == 'not':
+            return shom.__sub__(self.succ, self.build_succ_alpha(alpha.children[0])) # not sure of myself here
+        elif alpha.kind =='and':
+            return reduce(shom.__and__, [self.build_succ_alpha(child) for child in alpha.children], self.succ)
+        elif alpha.kind =='or':
+            return reduce(shom.__or__, [self.build_succ_alpha(child) for child in alpha.children], shom.empty())
+        else:
+            raise ValueError(repr(actions) + "is not an action sub formula")
       
     def check(self, formula):
         """
@@ -249,8 +255,26 @@ class ARCTL_model_checker(CTL_model_checker):
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
         if phi.kind in self.unarymod and phi.actions:
-            return CTL_model_checker(self.CTL_True, self.build_pred(phi.actions)).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
+            return CTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions)).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
         elif phi.kind in self.binarymod and phi.actions:
-            return CTL_model_checker(self.CTL_True, self.build_pred(phi.actions)).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
+            return CTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions)).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
         else:
-            return super()._phi2sdd(Phi(phi.kind, [self._phi2ssd(child) for child in phi.children]))
+            return CTL_model_checker._phi2sdd(phi)
+
+        
+        
+####################### Fair ARCTL #######################
+      
+class FairARCTL_model_checker(ARCTL_model_checker, FairCTL_model_checker):
+    def __init__ (self, universe, succ_dict, fairness):
+        ARCTL_model_checker.__init__(self, universe, succ_dict)
+        FairCTL_model_checker.__init__ (self, universe, self.succ, fairness)
+    
+    # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
+    def _phi2sdd(self, phi):
+        if phi.kind in self.unarymod and phi.actions:
+            return FairCTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions), self.fairness).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
+        elif phi.kind in self.binarymod and phi.actions:
+            return FairCTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions), self.fairness).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
+        else:
+            return FairCTL_model_checker._phi2sdd(self, phi)
