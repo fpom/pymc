@@ -41,9 +41,15 @@ The syntax of formulae is described at [pytl](https://github.com/fpom/pytl) :
          |  "(" phi ")"
          |  atom
 
-Supported operators :
- - unary : `EX, EF, EG, AX, AF, AG`
- - binary : `EU, EW, ER, AU, AW, AR`
+    quantifier ::= "A" | "E"
+    
+    unarymod ::= "X" | "F" | "G"
+    
+    boolop ::= "&" | "|" | "=>" | "<=>"
+    
+    binarymod ::= "U" | "R"
+    
+    atom ::= /\w+|"[^"]+"|'[^']+'/
 
 ### Fair CTL
 
@@ -54,6 +60,30 @@ An additional argument must be given at initialization, representing the fairnes
  - a list of strings, Phi objects or sdd, representing the list of fairness constraints : [f1, f2,...]
  - a single string, Phi or sdd, representing a single fairness constraint
 
-Supported operators :
- - unary : `EX, EF, EG, AX, AF, AG`
- - binary : `EU, AU`
+### ARCTL
+
+The syntax of formulae is described at [pytl](https://github.com/fpom/pytl) :
+    
+    phi ::= quantifier unarymod phi
+         |  quantifier phi binarymod phi
+         |  phi boolop phi
+         |  "~" phi
+         |  "(" phi ")"
+         |  atom
+
+    quantifier ::= ("A" | "E") ("{" actions "}")?
+    
+    unarymod ::= "X" | "F" | "G"
+    
+    boolop ::= "&" | "|" | "=>" | "<=>"
+    
+    binarymod ::= "U" | "R"
+    
+    atom ::= /\w+|"[^"]+"|'[^']+'/
+    
+    actions ::= "(" actions ")"
+        | "~" actions
+        | actions boolop actions
+        | atom
+        
+### FairARCTL
