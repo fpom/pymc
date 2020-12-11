@@ -2,6 +2,8 @@ from ddd import ddd, sdd, shom
 from tl import parse, Phi
 from functools import reduce, lru_cache
 
+# TODO : tau actions
+
 def fixpoint(fonction, start):
     current = start
     previous = None
@@ -96,10 +98,14 @@ class CTL_model_checker(object):
             return self.atom(phi.value)
         elif phi.kind == 'not':
             return self.neg(self._phi2sdd(phi.children[0]))
-        elif phi.kind =='and':
+        elif phi.kind == 'and':
             return reduce(sdd.__and__, [self._phi2sdd(child) for child in phi.children], self.CTL_True)
-        elif phi.kind =='or':
+        elif phi.kind == 'or':
             return reduce(sdd.__or__, [self._phi2sdd(child) for child in phi.children], self.CTL_False)
+        elif phi.kind == 'imply':
+          	return self.neg(self._phi2sdd(phi.children[0])) | self._phi2sdd(phi.children[1])
+        elif phi.kind == 'iff':
+          	return (self._phi2sdd(phi.children[0]) & self._phi2sdd(phi.children[1])) | (self.neg(self._phi2sdd(phi.children[0])) & self.neg(self._phi2sdd(phi.children[1])))
         elif phi.kind in self.unarymod:
             return self.unarymod[phi.kind](self._phi2sdd(phi.children[0]))
         elif phi.kind in self.binarymod:
@@ -191,14 +197,13 @@ def build_labeled_succ(v):
     res = dict()
     labels = list(set([label for r in v.model.spec.rules if r.label for label in r.label.split(",")]))# build a list of unique value of Rule labels
     labels.sort() # sort this list for better display
-    # rules without labels
-    # get the indexes of the rules labeld with label
-    rules_index = [r.name() for r in v.model.spec.rules if not r.label]
-    # get the shoms corresponding to those indexes
-    shoms = [v.g.m.transitions()[i] for i in rules_index]
-    # build the union of those shoms
-    succ =  functools.reduce(shom.__or__, shoms, shom.empty())
-    res["None"] = succ
+    # add a special key "_None" in the dict associated to unlabeld
+    unlabeled_rules = [r.name() for r in v.model.spec.rules if not r.label]
+    if unlabeled_rules:
+        assert "_None" not in labels, 'there is a rule labeled "_None" but it is a restricted label for rules without label'     
+        unlabeled_shoms = [v.g.m.transitions()[i] for i in unlabeled_rules]
+        # build the union of those shoms  
+        res["_None"] = functools.reduce(shom.__or__, unlabeled_shoms, shom.empty())
     # rules with labels
     for label in labels:
         # get the indexes of the rules labeld with label
@@ -212,11 +217,12 @@ def build_labeled_succ(v):
 
 
 class ARCTL_model_checker(CTL_model_checker):
-    def __init__ (self, universe, succ_dict):
+    def __init__ (self, universe, succ_dict, true_label="_None"):
         """
         Input :
         - universe is a sdd representing the state space (for example v.g.reachable)
         - succ_dict is a dictionary associating transition label strings to shom representing the succ for this label (for exemple using build_dict_labeled_succ(v))
+        - true_label : the label representing invisible actions, or False if no invisible actions
         """
         assert isinstance(succ_dict, dict), "succ_dict must be of type dict"
         assert len(succ_dict) >= 1, "succ_dict must contain at least one element"
@@ -224,7 +230,9 @@ class ARCTL_model_checker(CTL_model_checker):
             assert isinstance(e, str), "every key of succ_dict must be of type string"
             assert isinstance(succ_dict[e], shom), "every value of succ_dict must be of type shom"
         
+        
         self.succ_dict = succ_dict
+        self.true_label = true_label
         self.succ = functools.reduce(shom.__or__, self.succ_dict.values(), shom.empty())
         CTL_model_checker.__init__(self, universe, self.succ)
         self.logic = "ARCTL"
@@ -263,10 +271,15 @@ class ARCTL_model_checker(CTL_model_checker):
       
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
-        if phi.kind in self.unarymod and phi.actions:
-            return CTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions)).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
-        elif phi.kind in self.binarymod and phi.actions:
-            return CTL_model_checker(self.CTL_True, self.build_succ_alpha(phi.actions)).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
+        if phi.actions:
+            if phi.kind in self.unarymod:
+                succ = self.build_succ_alpha(phi.actions)
+                if self.true_label:
+                    # the invisible actions are added to succ
+                    succ = shom.__or__(succ, self.succ_dict["_None"])
+                return CTL_model_checker(self.CTL_True, succ).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
+            elif phi.kind in self.binarymod:
+                return CTL_model_checker(self.CTL_True, succ).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
         else:
             return CTL_model_checker._phi2sdd(phi)
 
@@ -275,8 +288,8 @@ class ARCTL_model_checker(CTL_model_checker):
 ####################### Fair ARCTL #######################
       
 class FairARCTL_model_checker(ARCTL_model_checker, FairCTL_model_checker):
-    def __init__ (self, universe, succ_dict, fairness):
-        ARCTL_model_checker.__init__(self, universe, succ_dict)
+    def __init__ (self, universe, succ_dict, fairness, true_label="_None"):
+        ARCTL_model_checker.__init__(self, universe, succ_dict, true_label)
         FairCTL_model_checker.__init__ (self, universe, self.succ, fairness)
     
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
