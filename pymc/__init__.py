@@ -1,3 +1,6 @@
+"""libDDD-based model-checker for (AR)CTL with(out) fairness
+"""
+
 from ddd import ddd, sdd, shom
 from tl import parse, Phi
 from functools import reduce, lru_cache
@@ -12,17 +15,17 @@ def fixpoint(fonction, start):
         current = fonction(current)
     return current
 
-      
-      
+
+
 ####################### CTL #######################
-      
+
 class CTL_model_checker(object):
     """
     Object which can symbolically compute the subset of the universe where a given CTL formula is satisfied.
-    
+
     Attributes :
     - variables : the list of the variables
-    
+
     Methods :
     - check(formula) : returns the sdd representing the subset of the universe where the input formula is satisfied
     - atom(var) : returns the sdd representing the subset of the universe where var is True
@@ -38,12 +41,12 @@ class CTL_model_checker(object):
         assert isinstance(succ, shom), "succ must be of type shom"
 
         self.logic = "CTL"
-        
+
         self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
 
         self.CTL_True = universe
         self.CTL_False = sdd.empty()
-        self.neg = lambda phi : self.CTL_True - phi 
+        self.neg = lambda phi : self.CTL_True - phi
         self.gfp = lambda fonction : fixpoint(fonction, self.CTL_True)
         self.lfp = lambda fonction : fixpoint(fonction, self.CTL_False)
 
@@ -53,7 +56,7 @@ class CTL_model_checker(object):
         self.EG = lambda phi : self.gfp(lambda Z : phi & (self.EX(Z) | self.deadlock))
         self.EU = lambda phi1, phi2 : self.lfp(lambda Z : phi2 | (phi1 & self.EX(Z)))
         self.EW = lambda phi1, phi2 : self.gfp(lambda Z : phi2 | (phi1 & (self.EX(Z) | self.deadlock)))
-        self.ER = lambda phi1, phi2 : self.gfp(lambda Z : phi2 & (phi1 | self.EX(Z) | self.deadlock))       
+        self.ER = lambda phi1, phi2 : self.gfp(lambda Z : phi2 & (phi1 | self.EX(Z) | self.deadlock))
         self.EM = lambda phi1, phi2 : self.lfp(lambda Z : phi2 & (phi1 | self.EX(Z)))
 
         self.AX = lambda phi : self.EX(self.CTL_True) & self.neg(self.EX(self.neg(phi)))
@@ -72,7 +75,7 @@ class CTL_model_checker(object):
         """
         Input :
         - var : string
-        
+
         Output :
         The sdd representing the subset of the universe where var is True.
         """
@@ -85,7 +88,7 @@ class CTL_model_checker(object):
                 d = ddd.from_range(v, 0, 1, d)
         return sdd.mkz(d) & self.CTL_True
 
-    
+
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
         if phi.kind == 'bool':
@@ -113,12 +116,12 @@ class CTL_model_checker(object):
         else:
             raise ValueError(repr(phi) + "is not a " + self.logic + " sub formula")
 
-            
+
     def check(self, formula):
         """
         Input :
         - formula : string or tl.Phi object
-        
+
         Output :
         The sdd representing the subset of the universe where the formula is satisfied.
         """
@@ -130,7 +133,7 @@ class CTL_model_checker(object):
 
 
 ####################### Fair CTL #######################
-      
+
 class FairCTL_model_checker(CTL_model_checker):
     def __init__ (self, universe, succ, fairness):
         """
@@ -158,10 +161,10 @@ class FairCTL_model_checker(CTL_model_checker):
                 raise TypeError("Fairness constraints must be CTL formulae or SDD")
 
         self.fairness = [fairness_preprocess(f) for f in fairness]
-        
+
         self.EG_fair = lambda phi : self.gfp(lambda Z : phi & (self.deadlock | self.EX(reduce(sdd.__and__ , [self.EU(Z, Z & f) for f in self.fairness], self.CTL_True))))
-        CTL_model_checker.__init__(self, self.EG_fair(self.CTL_True), succ)        
-        
+        CTL_model_checker.__init__(self, self.EG_fair(self.CTL_True), succ)
+
         # EX, AX, EU, EF, EM do not need to be redefined once universe = EG_fair(True)
         self.EX_fair = self.EX
         self.EF_fair = self.EF
@@ -179,7 +182,7 @@ class FairCTL_model_checker(CTL_model_checker):
         self.AW_fair = lambda phi1, phi2 : self.neg(self.EU_fair(self.neg(phi2), self.neg(phi1) & self.neg(phi2)))
         self.AR_fair = lambda phi1, phi2 : self.AW_fair(phi2, phi1 & phi2)
         self.AM_fair = lambda phi1, phi2 : self.AU_fair(phi2, phi1 & phi2)
-        
+
         self.unarymod = {"EX" : self.EX_fair, "EF" : self.EF_fair, "EG" : self.EG_fair, "AX" : self.AX_fair, "AF" : self.AF_fair, "AG" : self.AG_fair}
         self.binarymod = {"EU" : self.EU_fair, "ER" : self.ER_fair, "EW" : self.EW_fair, "EM" : self.EM_fair, "AU" : self.AU_fair, "AR" : self.AR_fair, "AW" : self.AW_fair, "AM" : self.AM_fair}
 
@@ -187,22 +190,22 @@ class FairCTL_model_checker(CTL_model_checker):
 
 ####################### ARCTL #######################
 
-import functools 
+import functools
 from ddd import shom
 
 def build_labeled_succ(v):
     # v.model.spec.rules contains a list of Rule objects (ecco.rr.st.py) representing the rules
     # v.g.m.transitions() returns a dict of {"R15" : shom}
-    
+
     res = dict()
     labels = list(set([label for r in v.model.spec.rules if r.label for label in r.label.split(",")]))# build a list of unique value of Rule labels
     labels.sort() # sort this list for better display
     # add a special key "_None" in the dict associated to unlabeld
     unlabeled_rules = [r.name() for r in v.model.spec.rules if not r.label]
     if unlabeled_rules:
-        assert "_None" not in labels, 'there is a rule labeled "_None" but it is a restricted label for rules without label'     
+        assert "_None" not in labels, 'there is a rule labeled "_None" but it is a restricted label for rules without label'
         unlabeled_shoms = [v.g.m.transitions()[i] for i in unlabeled_rules]
-        # build the union of those shoms  
+        # build the union of those shoms
         res["_None"] = functools.reduce(shom.__or__, unlabeled_shoms, shom.empty())
     # rules with labels
     for label in labels:
@@ -229,7 +232,7 @@ class ARCTL_model_checker(CTL_model_checker):
         for e in succ_dict : # for each key of the dictionnary
             assert isinstance(e, str), "every key of succ_dict must be of type string"
             assert isinstance(succ_dict[e], shom), "every value of succ_dict must be of type shom"
-        
+
         self.succ_dict = succ_dict
         if tau_label in succ_dict:
             self.tau_label = tau_label
@@ -238,7 +241,7 @@ class ARCTL_model_checker(CTL_model_checker):
         self.succ = functools.reduce(shom.__or__, self.succ_dict.values(), shom.empty())
         CTL_model_checker.__init__(self, universe, self.succ)
         self.logic = "ARCTL"
-        
+
     def build_succ_alpha(self, alpha):
         if alpha.kind == 'bool':
             assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
@@ -256,12 +259,12 @@ class ARCTL_model_checker(CTL_model_checker):
             return reduce(shom.__or__, [self.build_succ_alpha(child) for child in alpha.children], shom.empty())
         else:
             raise ValueError(repr(actions) + "is not an action sub formula")
-      
+
     def check(self, formula):
         """
         Input :
         - formula : string or tl.Phi object
-        
+
         Output :
         The sdd representing the subset of the universe where the formula is satisfied.
         """
@@ -269,7 +272,7 @@ class ARCTL_model_checker(CTL_model_checker):
         if isinstance(formula , str):
             formula = parse(formula).arctl()
         return self._phi2sdd(formula)
-      
+
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
         if phi.actions:
@@ -283,15 +286,15 @@ class ARCTL_model_checker(CTL_model_checker):
         else:
             return CTL_model_checker._phi2sdd(self, phi)
 
-        
-        
+
+
 ####################### Fair ARCTL #######################
-      
+
 class FairARCTL_model_checker(ARCTL_model_checker, FairCTL_model_checker):
     def __init__ (self, universe, succ_dict, fairness, true_label="_None"):
         ARCTL_model_checker.__init__(self, universe, succ_dict, true_label)
         FairCTL_model_checker.__init__ (self, universe, self.succ, fairness)
-    
+
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
         if phi.actions:
