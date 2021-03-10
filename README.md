@@ -22,8 +22,8 @@ Example :
         %run -m ecco termites-simpler.rr
         v = model("test",split=False, force=True)
         formula = "AF E(Sd U Fg & Te)"
-        CTL_mc = CTL_model_checker(v.g.reachable, v.g.m.pred())
-        FairCTL_mc = FairCTL_model_checker(v.g.reachable, v.g.m.pred(),["~Ac"])
+        CTL_mc = CTL_model_checker(v.g.reachable, v.g.m.succ())
+        FairCTL_mc = FairCTL_model_checker(v.g.reachable, v.g.m.succ(),["~Ac"])
         print(v.g.initial<=CTL_mc.check(formula))
         print(v.g.initial<=FairCTL_mc.check(formula))
 
