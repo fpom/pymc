@@ -145,7 +145,7 @@ class FairCTL_model_checker(CTL_model_checker):
         CTL_model_checker.__init__(self, universe, succ)
         if isinstance(fairness, list):
             pass
-        elif isinstance(fairness, str) or isinstance(fairness, sdd) :
+        elif isinstance(fairness, (str, sdd, Phi)) :
             fairness = [fairness]
         else:
             raise TypeError("fairness must be a list, a string or a sdd expressing a CTL formula")
@@ -153,7 +153,7 @@ class FairCTL_model_checker(CTL_model_checker):
             print("The list of fairness constraints is empty, you should use the CTL_model_checker instead")
 
         def fairness_preprocess(f):
-            if isinstance(f, str) or isinstance(f, Phi):
+            if isinstance(f, (str, Phi)):
                 return CTL_model_checker(universe, succ).check(f)
             elif isinstance(f, sdd):
                 return f
