@@ -251,7 +251,7 @@ class ARCTL_model_checker(CTL_model_checker):
         if phi.actions:
             pred = self.build_pred_alpha(phi.actions)
             if self.tau_label:
-                pred = shom.__or__(pred, self.pred_dict[self.pred_label])# the invisible actions are added to pred
+                pred = shom.__or__(pred, self.pred_dict[self.tau.label])# the invisible actions are added to pred
             if phi.kind in self.unarymod:
                 return CTL_model_checker(self.CTL_True, pred).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
             elif phi.kind in self.binarymod:
