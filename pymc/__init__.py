@@ -2,7 +2,7 @@
 """
 
 from ddd import ddd, sdd, shom
-from tl import parse, Phi
+from pytl import parse, Phi
 from functools import reduce, lru_cache
 
 # TODO : tau actions
@@ -42,8 +42,11 @@ class CTL_model_checker(object):
         assert isinstance(pred, shom), "pred must be of type shom"
 
         self.logic = "CTL"
-
-        self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
+        
+        if universe:
+            self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
+        else:
+            self.variables = []
 
         self.CTL_True = universe
         self.CTL_False = sdd.empty()
@@ -132,63 +135,6 @@ class CTL_model_checker(object):
         return self._phi2sdd(formula)
 
 
-
-####################### Fair CTL #######################
-
-class FairCTL_model_checker(CTL_model_checker):
-    def __init__ (self, universe, pred, fairness):
-        """
-        Input :
-        - universe is a sdd representing the state space (for example v.g.reachable)
-        - pred is a shom representing the precedence relation (inverse of the transition relation)
-        - fairness is a list of CTL formulae (or sdd) to be used as fairness constraints (the fair trajectory must satisfy and[GF f for f in fairness])
-        """
-        CTL_model_checker.__init__(self, universe, pred)
-        if isinstance(fairness, list):
-            pass
-        elif isinstance(fairness, (str, sdd, Phi)) :
-            fairness = [fairness]
-        else:
-            raise TypeError("fairness must be a list, a string or a sdd expressing a CTL formula")
-        if fairness == []:
-            print("The list of fairness constraints is empty, you should use the CTL_model_checker instead")
-
-        def fairness_preprocess(f):
-            if isinstance(f, (str, Phi)):
-                return CTL_model_checker(universe, pred).check(f)
-            elif isinstance(f, sdd):
-                return f
-            else:
-                raise TypeError("Fairness constraints must be CTL formulae or SDD")
-
-        self.fairness = [fairness_preprocess(f) for f in fairness]
-
-        self.EG_fair = lambda phi : self.gfp(lambda Z : phi & (self.deadlock | self.EX(reduce(sdd.__and__ , [self.EU(Z, Z & f) for f in self.fairness], self.CTL_True))))
-        CTL_model_checker.__init__(self, self.EG_fair(self.CTL_True), pred)
-
-        # EX, AX, EU, EF, EM do not need to be redefined once universe = EG_fair(True)
-        self.EX_fair = self.EX
-        self.EF_fair = self.EF
-        # self.deadlock and self.CTL_true have changed since the redefinition of the universe into EG_fair(True)
-        self.EG_fair = lambda phi : self.gfp(lambda Z : phi & (self.deadlock | self.EX(reduce(sdd.__and__ , [self.EU(Z, Z & f) for f in self.fairness], self.CTL_True))))
-        self.EU_fair = self.EU
-        self.EW_fair = lambda phi1, phi2 : self.EU_fair(phi1, phi2) | self.EG_fair(phi1)
-        self.ER_fair = lambda phi1, phi2 : self.EW_fair(phi2, phi1 & phi2)
-        self.EM_fair = self.EM
-
-        self.AX_fair = self.AX
-        self.AF_fair = lambda phi : self.neg(self.EG_fair(self.neg(phi)))
-        self.AG_fair = lambda phi : self.neg(self.EF_fair(self.neg(phi)))
-        self.AU_fair = lambda phi1, phi2 : self.neg(self.EU_fair(self.neg(phi2), self.neg(phi1) & self.neg(phi2))) & self.neg(self.EG_fair(self.neg(phi2)))
-        self.AW_fair = lambda phi1, phi2 : self.neg(self.EU_fair(self.neg(phi2), self.neg(phi1) & self.neg(phi2)))
-        self.AR_fair = lambda phi1, phi2 : self.AW_fair(phi2, phi1 & phi2)
-        self.AM_fair = lambda phi1, phi2 : self.AU_fair(phi2, phi1 & phi2)
-
-        self.unarymod = {"EX" : self.EX_fair, "EF" : self.EF_fair, "EG" : self.EG_fair, "AX" : self.AX_fair, "AF" : self.AF_fair, "AG" : self.AG_fair}
-        self.binarymod = {"EU" : self.EU_fair, "ER" : self.ER_fair, "EW" : self.EW_fair, "EM" : self.EM_fair, "AU" : self.AU_fair, "AR" : self.AR_fair, "AW" : self.AW_fair, "AM" : self.AM_fair}
-
-
-
 ####################### ARCTL #######################
 
 
@@ -215,7 +161,7 @@ class ARCTL_model_checker(CTL_model_checker):
         CTL_model_checker.__init__(self, universe, pred)
         self.logic = "ARCTL"
 
-    def build_pred_alpha(self, alpha):
+    def alpha_parse(self, alpha):       
         if alpha.kind == 'bool':
             assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
             if alpha.value:
@@ -227,11 +173,17 @@ class ARCTL_model_checker(CTL_model_checker):
         elif alpha.kind == 'not':
             return shom.__sub__(self.pred, self.build_pred_alpha(alpha.children[0])) # not sure of myself here
         elif alpha.kind =='and':
-            return reduce(shom.__and__, [self.build_pred_alpha(child) for child in alpha.children], self.pred)
+            return reduce(shom.__and__, [self.build_pred_alpha(child) for child in alpha.children], self.EX)
         elif alpha.kind =='or':
             return reduce(shom.__or__, [self.build_pred_alpha(child) for child in alpha.children], shom.empty())
         else:
-            raise ValueError(repr(actions) + "is not an action sub formula")
+            raise ValueError(repr(alpha) + "is not an action sub formula")
+            
+    def build_pred_alpha(self, alpha):
+        pred_alpha = self.alpha_parse(alpha)
+        if self.tau_label:
+                pred_alpha = shom.__or__(pred_alpha, self.pred_dict[self.tau_label])# the invisible actions are added to pred
+        return pred_alpha
 
     def check(self, formula):
         """
@@ -246,37 +198,66 @@ class ARCTL_model_checker(CTL_model_checker):
             formula = parse(formula).arctl()
         return self._phi2sdd(formula)
 
+    def _EXevent(self, pred_alpha, event):
+        if event.kind == "actions":# \exists_{\alpha \land \Event{\Actions}} \X Z
+            return lambda phi : CTL_model_checker(self.CTL_True, pred_alpha & self.build_pred_alpha(event.children[0])).unarymod["EX"](phi)
+        else:# \Event{\States} \land (\exists_\alpha \X Z \lor \neg \exists_\alpha \X \top)
+            return lambda phi : self._phi2sdd(event) & (CTL_model_checker(self.CTL_True, pred_alpha).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock)
+        
+    def _EXnotevent(self, pred_alpha, event):
+        if event.kind == "actions":# \exists_{\alpha \land \neg\Event{\Actions}} \X Z \lor \neg\exists_\alpha \X \top
+            return lambda phi : CTL_model_checker(self.CTL_True, pred_alpha & self.build_pred_alpha(Phi("not", event.children[0]))).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock
+        else:# \neg\Event{\States} \land (\exists_\alpha \X Z \lor \neg \exists_\alpha \X \top)
+            return lambda phi : self.neg(self._phi2sdd(event)) & (CTL_model_checker(self.CTL_True, pred_alpha).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock)
+        
+    def _fairunarymod(self, pred, EG_fair):
+        mc = CTL_model_checker(EG_fair(self.CTL_True), pred)
+        # EX, AX, EF do not need to be redefined once universe = EG_fair(True)
+        EX_fair = mc.EX
+        EF_fair = mc.EF
+        AX_fair = mc.AX
+        AF_fair = lambda phi : mc.neg(EG_fair(mc.neg(phi)))
+        AG_fair = lambda phi : mc.neg(EF_fair(mc.neg(phi)))
+        return {"EX" : EX_fair, "EF" : EF_fair, "EG" : EG_fair, "AX" : AX_fair, "AF" : AF_fair, "AG" : AG_fair}
+    
+    def _fairbinarymod(self, pred, EG_fair):
+        mc = CTL_model_checker(EG_fair(self.CTL_True), pred)
+        # EU, EM do not need to be redefined once universe = EG_fair(True)
+        EU_fair = mc.EU
+        EW_fair = lambda phi1, phi2 : EU_fair(phi1, phi2) | EG_fair(phi1)
+        ER_fair = lambda phi1, phi2 : EW_fair(phi2, phi1 & phi2)
+        EM_fair = mc.EM  
+        AU_fair = lambda phi1, phi2 : mc.neg(EU_fair(mc.neg(phi2), mc.neg(phi1) & mc.neg(phi2))) & mc.neg(EG_fair(mc.neg(phi2)))
+        AW_fair = lambda phi1, phi2 : mc.neg(EU_fair(mc.neg(phi2), mc.neg(phi1) & mc.neg(phi2)))
+        AR_fair = lambda phi1, phi2 : AW_fair(phi2, phi1 & phi2)
+        AM_fair = lambda phi1, phi2 : AU_fair(phi2, phi1 & phi2)
+        return {"EU" : EU_fair, "ER" : ER_fair, "EW" : EW_fair, "EM" : EM_fair, "AU" : AU_fair, "AR" : AR_fair, "AW" : AW_fair, "AM" : AM_fair}
+        
     # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
     def _phi2sdd(self, phi):
         if phi.actions:
             pred = self.build_pred_alpha(phi.actions)
-            if self.tau_label:
-                pred = shom.__or__(pred, self.pred_dict[self.tau.label])# the invisible actions are added to pred
+        else:
+            pred = self.EX
+        if phi.ufair or phi.wfair or phi.sfair:
+            for f in phi.sfair:
+                assert f.condition.kind != "actions", "Action event not allowed in condition of strong fairness"
+            tau_ufair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(pred, f.then)(Z)) for f in phi.ufair], self.CTL_True)
+            tau_wfair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & (self._EXnotevent(pred, f.condition)(Z) | self._EXevent(pred, f.then)(Z))) for f in phi.wfair], self.CTL_True)
+            tau_sfair = lambda Z: reduce(sdd.__and__, [self._EXnotevent(pred, f.condition)(Z) | CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(pred, f.then)(Z)) for f in phi.sfair], self.CTL_True)
+            EG_fair = lambda phi: CTL_model_checker(self.CTL_True, pred).binarymod["EU"](phi, self.gfp(lambda Z: phi & tau_ufair(Z) & tau_wfair(Z) & tau_sfair(Z)))
+            if not(EG_fair(self.CTL_True)):
+                print(f"WARNING: No fair path exists for {''.join([f'[UFAIR {f.then}]' for f in phi.ufair])}{''.join([f'[WFAIR {f.condition} THEN {f.then}]' for f in phi.wfair])}{''.join([f'[SFAIR {f.condition} THEN {f.then}]' for f in phi.sfair])}")
+            if phi.kind in self.unarymod:
+                return self._fairunarymod(pred, EG_fair)[phi.kind](self._phi2sdd(phi.children[0]))
+            elif phi.kind in self.binarymod:
+                return self._fairbinarymod(pred, EG_fair)[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
+            else:
+                assert False, "Fairness assumption without quantifier"
+        else:
             if phi.kind in self.unarymod:
                 return CTL_model_checker(self.CTL_True, pred).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
             elif phi.kind in self.binarymod:
                 return CTL_model_checker(self.CTL_True, pred).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
-        else:
-            return CTL_model_checker._phi2sdd(self, phi)
-
-
-
-####################### Fair ARCTL #######################
-
-class FairARCTL_model_checker(ARCTL_model_checker, FairCTL_model_checker):
-    def __init__ (self, universe, pred_dict, pred, fairness, tau_label="_None"):
-        ARCTL_model_checker.__init__(self, universe, pred_dict, pred, tau_label)
-        FairCTL_model_checker.__init__ (self, universe, self.pred, fairness)
-
-    # recursive function that builds the sdd along the syntax tree (bottom-up, going-up from the tree leaves)
-    def _phi2sdd(self, phi):
-        if phi.actions:
-            pred = self.build_pred_alpha(phi.actions)
-            if self.tau_label:
-                pred = shom.__or__(pred, self.pred_dict[self.tau_label])# the invisible actions are added to pred
-            if phi.kind in self.unarymod:
-                FairCTL_model_checker(self.CTL_True, pred, self.fairness).unarymod[phi.kind](self._phi2sdd(phi.children[0]))
-            elif phi.kind in self.binarymod:
-                return FairCTL_model_checker(self.CTL_True, pred, self.fairness).binarymod[phi.kind](self._phi2sdd(phi.children[0]), self._phi2sdd(phi.children[1]))
-        else:
-            return FairCTL_model_checker._phi2sdd(self, phi)
+            else:
+                return CTL_model_checker._phi2sdd(self, phi)
