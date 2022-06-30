@@ -165,9 +165,10 @@ class ARCTL_model_checker(CTL_model_checker):
             else:
                 return shom.empty()
         elif alpha.kind == 'name':
+            assert alpha.value in self.pred_dict.keys(), f"{alpha.value} is not an action label"
             return self.pred_dict[alpha.value]
         elif alpha.kind == 'not':
-            return shom.__sub__(self.EX, self.build_pred_alpha(alpha.children[0])) # not sure of myself here
+            return self.EX.__sub__(self.build_pred_alpha(alpha.children[0])) # not sure of myself here
         elif alpha.kind =='and':
             return reduce(shom.__and__, [self.build_pred_alpha(child) for child in alpha.children], self.EX)
         elif alpha.kind =='or':
