@@ -140,47 +140,51 @@ class ARCTL_model_checker(CTL_model_checker):
         """
         Input:
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - pred_dict is a dictionary associating transition label strings to shom representing the precedence relation for this label
+        - pred_dict is a list of tuples associating shoms and vectors of label strings
         - pred is a shom representing the precedence relation (inverse of the transition relation)
         - tau_label is the label representing invisible actions, or '_None' if no invisible actions
         """
-        assert isinstance(pred_dict, dict), "pred_dict must be of type dict"
-        assert len(pred_dict) >= 1, "pred_dict must contain at least one element"
-        for e in pred_dict: # for each key of the dictionnary
-            assert isinstance(e, str), "every key of pred_dict must be of type string"
-            assert isinstance(pred_dict[e], shom), "every value of pred_dict must be of type shom"
+        assert isinstance(pred_dict, list), "pred_dict must be of type dict"
         self.pred_dict = pred_dict
-        if tau_label in pred_dict:
+        assert len(pred_dict) >= 1, "pred_dict must contain at least one element"
+        self.alpha_labels = set()
+        for action, labels in pred_dict: # for each key of the dictionnary
+            assert isinstance(action, shom), "every key of pred_dict must be of type shom"
+            for l in labels:
+                assert isinstance(l, str), "every value of pred_dict must be of type str"
+                self.alpha_labels.add(l)
+        self.alpha_labels = list(self.alpha_labels)   
+        if tau_label in self.alpha_labels:
             self.tau_label = tau_label
         else:
             self.tau_label = None
         CTL_model_checker.__init__(self, universe, pred)
         self.logic = "ARCTL"
 
-    def alpha_parse(self, alpha):       
+    def alpha_parse(self, alpha, labels):       
         if alpha.kind == 'bool':
             assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
             if alpha.value:
-                return self.EX
+                return True
             else:
-                return shom.empty()
+                return False
         elif alpha.kind == 'name':
-            assert alpha.value in self.pred_dict.keys(), f"{alpha.value} is not an action label"
-            return self.pred_dict[alpha.value]
+            assert alpha.value in self.alpha_labels, f"{alpha.value} is not an action label"
+            if self.tau_label:
+                if self.tau_label in labels:
+                    return True
+            return alpha.value in labels
         elif alpha.kind == 'not':
-            return self.EX.__sub__(self.build_pred_alpha(alpha.children[0])) # not sure of myself here
+            return not(self.alpha_parse(alpha.children[0], labels))
         elif alpha.kind =='and':
-            return reduce(shom.__and__, [self.build_pred_alpha(child) for child in alpha.children], self.EX)
+            return reduce(bool.__and__, [self.alpha_parse(child, labels) for child in alpha.children], True)
         elif alpha.kind =='or':
-            return reduce(shom.__or__, [self.build_pred_alpha(child) for child in alpha.children], shom.empty())
+            return reduce(bool.__or__, [self.alpha_parse(child, labels) for child in alpha.children], False)
         else:
             raise ValueError(repr(alpha) + "is not an action sub formula")
             
     def build_pred_alpha(self, alpha):
-        pred_alpha = self.alpha_parse(alpha)
-        if self.tau_label:
-                pred_alpha = shom.__or__(pred_alpha, self.pred_dict[self.tau_label])# the invisible actions are added to pred
-        return pred_alpha
+        return reduce(shom.__or__, [action for (action, labels) in self.pred_dict if self.alpha_parse(alpha, labels)], shom.empty())
 
     def check(self, formula):
         """
