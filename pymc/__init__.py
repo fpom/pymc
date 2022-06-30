@@ -2,7 +2,7 @@
 """
 
 from ddd import ddd, sdd, shom
-from pytl import parse, Phi
+from tl import parse, Phi
 from functools import reduce, lru_cache
 
 def fixpoint(fonction, start):
