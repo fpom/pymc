@@ -5,8 +5,6 @@ from ddd import ddd, sdd, shom
 from pytl import parse, Phi
 from functools import reduce, lru_cache
 
-# TODO : tau actions
-
 def fixpoint(fonction, start):
     current = start
     previous = None
@@ -16,24 +14,23 @@ def fixpoint(fonction, start):
     return current
 
 
-
 ####################### CTL #######################
 
 class CTL_model_checker(object):
     """
     Object which can symbolically compute the subset of the universe where a given CTL formula is satisfied.
 
-    Attributes :
-    - variables : the list of the variables
-    - logic : a string naming the logic
+    Attributes:
+    - variables: the list of the variables
+    - logic: a string naming the logic
 
-    Methods :
-    - check(formula) : returns the sdd representing the subset of the universe where the input formula is satisfied
-    - atom(var) : returns the sdd representing the subset of the universe where var is True
+    Methods:
+    - check(formula): returns the sdd representing the subset of the universe where the input formula is satisfied
+    - atom(var): returns the sdd representing the subset of the universe where var is True
     """
     def __init__ (self, universe, pred):
         """
-        Input :
+        Input:
         - universe is a sdd representing the state space (for example v.g.reachable)
         - pred is a shom representing the precedence relation (inverse of the transition relation)
         """
@@ -77,10 +74,10 @@ class CTL_model_checker(object):
     @lru_cache(maxsize=None) # si la version de python etait 3.9 on pourrait utiliser functools.cache directement
     def atom(self, var):
         """
-        Input :
-        - var : string
+        Input:
+        - var: string
 
-        Output :
+        Output:
         The sdd representing the subset of the universe where var is True.
         """
         assert var in self.variables, var + " is not a variable"
@@ -124,9 +121,9 @@ class CTL_model_checker(object):
     def check(self, formula):
         """
         Input :
-        - formula : string or tl.Phi object
+        - formula: string or tl.Phi object
 
-        Output :
+        Output:
         The sdd representing the subset of the universe where the formula is satisfied.
         """
         assert isinstance(formula , str) or isinstance(formula , Phi), "The formula given in input must be a string or a parsed formula"
@@ -141,18 +138,17 @@ class CTL_model_checker(object):
 class ARCTL_model_checker(CTL_model_checker):
     def __init__ (self, universe, pred_dict, pred, tau_label="_None"):
         """
-        Input :
+        Input:
         - universe is a sdd representing the state space (for example v.g.reachable)
         - pred_dict is a dictionary associating transition label strings to shom representing the precedence relation for this label
         - pred is a shom representing the precedence relation (inverse of the transition relation)
-        - tau_label : the label representing invisible actions, or None if no invisible actions
+        - tau_label is the label representing invisible actions, or '_None' if no invisible actions
         """
         assert isinstance(pred_dict, dict), "pred_dict must be of type dict"
         assert len(pred_dict) >= 1, "pred_dict must contain at least one element"
-        for e in pred_dict : # for each key of the dictionnary
+        for e in pred_dict: # for each key of the dictionnary
             assert isinstance(e, str), "every key of pred_dict must be of type string"
             assert isinstance(pred_dict[e], shom), "every value of pred_dict must be of type shom"
-
         self.pred_dict = pred_dict
         if tau_label in pred_dict:
             self.tau_label = tau_label
@@ -165,13 +161,13 @@ class ARCTL_model_checker(CTL_model_checker):
         if alpha.kind == 'bool':
             assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
             if alpha.value:
-                return self.pred
+                return self.EX
             else:
                 return shom.empty()
         elif alpha.kind == 'name':
             return self.pred_dict[alpha.value]
         elif alpha.kind == 'not':
-            return shom.__sub__(self.pred, self.build_pred_alpha(alpha.children[0])) # not sure of myself here
+            return shom.__sub__(self.EX, self.build_pred_alpha(alpha.children[0])) # not sure of myself here
         elif alpha.kind =='and':
             return reduce(shom.__and__, [self.build_pred_alpha(child) for child in alpha.children], self.EX)
         elif alpha.kind =='or':
@@ -188,9 +184,9 @@ class ARCTL_model_checker(CTL_model_checker):
     def check(self, formula):
         """
         Input :
-        - formula : string or tl.Phi object
+        - formula: string or tl.Phi object
 
-        Output :
+        Output:
         The sdd representing the subset of the universe where the formula is satisfied.
         """
         assert isinstance(formula , str) or isinstance(formula , Phi), "The formula given in input must be a string or a parsed formula"
@@ -247,7 +243,7 @@ class ARCTL_model_checker(CTL_model_checker):
             tau_sfair = lambda Z: reduce(sdd.__and__, [self._EXnotevent(pred, f.condition)(Z) | CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(pred, f.then)(Z)) for f in phi.sfair], self.CTL_True)
             EG_fair = lambda phi: CTL_model_checker(self.CTL_True, pred).binarymod["EU"](phi, self.gfp(lambda Z: phi & tau_ufair(Z) & tau_wfair(Z) & tau_sfair(Z)))
             if not(EG_fair(self.CTL_True)):
-                print(f"WARNING: No fair path exists for {''.join([f'[UFAIR {f.then}]' for f in phi.ufair])}{''.join([f'[WFAIR {f.condition} THEN {f.then}]' for f in phi.wfair])}{''.join([f'[SFAIR {f.condition} THEN {f.then}]' for f in phi.sfair])}")
+                print(f"WARNING: No fair {phi.actions}-path exists for {''.join([f'[UFAIR {f.then}]' for f in phi.ufair])}{''.join([f'[WFAIR {f.condition} THEN {f.then}]' for f in phi.wfair])}{''.join([f'[SFAIR {f.condition} THEN {f.then}]' for f in phi.sfair])}")
             if phi.kind in self.unarymod:
                 return self._fairunarymod(pred, EG_fair)[phi.kind](self._phi2sdd(phi.children[0]))
             elif phi.kind in self.binarymod:
