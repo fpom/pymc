@@ -34,15 +34,15 @@ class CTL_model_checker(object):
         - universe is a sdd representing the state space (for example v.g.reachable)
         - pred is a shom representing the precedence relation (inverse of the transition relation)
         """
-        # TODO : mettre en cache les output de phi2sdd ?
+        
         assert isinstance(universe, sdd), "universe must be of type sdd"
         assert isinstance(pred, shom), "pred must be of type shom"
 
         self.logic = "CTL"
         
         if universe:
-            self.variables = next(iter(universe))[0].vars() # c'est tres sale mais je trouve pas d'autre solution pour l'instant
-        else:
+            self.variables = next(iter(universe))[0].vars() # ugly, should be changed if sdd are fully used
+        else: # the universe is empty when checking when checking a fairness assumption that no path satisfy
             self.variables = []
 
         self.CTL_True = universe
@@ -72,7 +72,7 @@ class CTL_model_checker(object):
         self.binarymod = {"EU" : self.EU, "ER" : self.ER, "EW" : self.EW, "EM" : self.EM, "AU" : self.AU, "AR" : self.AR, "AW" : self.AW, "AM" : self.AM}
 
     @lru_cache(maxsize=None) # si la version de python etait 3.9 on pourrait utiliser functools.cache directement
-    def atom(self, var):
+    def _atom(self, var):
         """
         Input:
         - var: string
@@ -99,7 +99,7 @@ class CTL_model_checker(object):
             else:
                 return self.CTL_False
         elif phi.kind == 'name':
-            return self.atom(phi.value)
+            return self._atom(phi.value)
         elif phi.kind == 'not':
             return self.neg(self._phi2sdd(phi.children[0]))
         elif phi.kind == 'and':
@@ -140,19 +140,19 @@ class ARCTL_model_checker(CTL_model_checker):
         """
         Input:
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - actions is a list of tuples associating shoms and vectors of label strings
+        - actions is a list of tuples associating shoms and lists of label strings
         - tau_label is the label representing invisible actions, or '_None' if no invisible actions
         """
         assert isinstance(actions, list), "actions must be of type dict"
         assert len(actions) >= 1, "actions must contain at least one element"
         self.actions = actions
         self.action_labels = set()
-        for action, labels in self.actions: # for each key of the dictionnary
-            assert isinstance(action, shom), "every key of actions must be of type shom"
+        for action, labels in self.actions:
+            assert isinstance(action, shom), "the first part of every action must be of type shom"
             for l in labels:
-                assert isinstance(l, str), "every value of actions must be of type str"
+                assert isinstance(l, str), "the second part of every action must be a list of str"
                 self.action_labels.add(l)
-        self.alpha_labels = list(self.alpha_labels)   
+        self.action_labels = list(self.action_labels)   
         if tau_label in self.action_labels:
             self.tau_label = tau_label
         else:
