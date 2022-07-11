@@ -158,7 +158,7 @@ class ARCTL_model_checker(CTL_model_checker):
             self.tau_label = tau_label
         else:
             self.tau_label = None
-        CTL_model_checker.__init__(self, universe, reduce(shom.__or__, [action for (action, labels) in self.actions]))
+        CTL_model_checker.__init__(self, universe, reduce(shom.__or__, [action for (action, labels) in self.actions.items()]))
         self.logic = "ARCTL"
 
     def alpha_parse(self, alpha, labels):
