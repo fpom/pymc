@@ -140,17 +140,18 @@ class ARCTL_model_checker(CTL_model_checker):
         """
         Input:
         - universe is a sdd representing the state space (for example v.g.reachable)
-        - actions is a list of tuples associating shoms and lists of label strings
+        - actions is a dict associating shoms to lists of label strings
         - tau_label is the label representing invisible actions, or '_None' if no invisible actions
         """
-        assert isinstance(actions, list), "actions must be of type dict"
+        assert isinstance(actions, dict), "actions must be of type dict"
         assert len(actions) >= 1, "actions must contain at least one element"
         self.actions = actions
         self.action_labels = set()
-        for action, labels in self.actions:
-            assert isinstance(action, shom), "the first part of every action must be of type shom"
+        for action, labels in self.actions.items():
+            assert isinstance(action, shom), "the key of every item of action must be of type shom"
+            assert isinstance(labels, list), "the value of every item of action must be of type list"
             for l in labels:
-                assert isinstance(l, str), "the second part of every action must be a list of str"
+                assert isinstance(l, str), "the value of every item of action must be a list of strings"
                 self.action_labels.add(l)
         self.action_labels = list(self.action_labels)   
         if tau_label in self.action_labels:
@@ -160,8 +161,10 @@ class ARCTL_model_checker(CTL_model_checker):
         CTL_model_checker.__init__(self, universe, reduce(shom.__or__, [action for (action, labels) in self.actions]))
         self.logic = "ARCTL"
 
-    def alpha_parse(self, alpha, labels):       
-        if alpha.kind == 'bool':
+    def alpha_parse(self, alpha, labels):
+        if self.tau_label in labels:
+            return True
+        elif alpha.kind == 'bool':
             assert isinstance(alpha.value, bool), repr(alpha) + " is of kind bool but its value is not a boolean"
             if alpha.value:
                 return True
@@ -169,9 +172,6 @@ class ARCTL_model_checker(CTL_model_checker):
                 return False
         elif alpha.kind == 'name':
             assert alpha.value in self.action_labels, f"{alpha.value} is not an action label"
-            if self.tau_label:
-                if self.tau_label in labels:
-                    return True
             return alpha.value in labels
         elif alpha.kind == 'not':
             return not(self.alpha_parse(alpha.children[0], labels))
@@ -183,7 +183,7 @@ class ARCTL_model_checker(CTL_model_checker):
             raise ValueError(repr(alpha) + "is not an action sub formula")
             
     def build_pred_alpha(self, alpha):
-        return reduce(shom.__or__, [action for (action, labels) in self.actions if self.alpha_parse(alpha, labels)], shom.empty())
+        return reduce(shom.__or__, [action for (action, labels) in self.actions.items() if self.alpha_parse(alpha, labels)], shom.empty())
 
     def check(self, formula):
         """
