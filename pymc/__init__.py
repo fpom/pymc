@@ -80,11 +80,17 @@ class CTL_model_checker(object):
         Output:
         The sdd representing the subset of the universe where var is True.
         """
-        assert var in self.variables, var + " is not a variable"
+        if var[-1] == '+' or var[-1] == '-':
+            assert var[:-1] in self.variables, var[:-1] + " is not a variable"
+            value = int(var[-1] == '+')
+            var = var[:-1]
+        else:
+            assert var in self.variables, var + " is not a variable"
+            value = 1
         d = ddd.one()
         for v in reversed(self.variables):
             if v == var :
-                d = ddd.from_range(var, 1, 1, d)
+                d = ddd.from_range(var, value, value, d)
             else :
                 d = ddd.from_range(v, 0, 1, d)
         return sdd.mkz(d) & self.CTL_True
