@@ -1,4 +1,5 @@
-"""libDDD-based model-checker for (AR)CTL with(out) fairness
+"""
+libDDD-based model-checker for (AR)CTL with(out) fairness
 """
 
 from ddd import ddd, sdd, shom
@@ -138,10 +139,10 @@ class CTL_model_checker(object):
         return self._phi2sdd(formula)
 
 
-####################### ARCTL #######################
+####################### FARCTL #######################
 
 
-class ARCTL_model_checker(CTL_model_checker):
+class FARCTL_model_checker(CTL_model_checker):
     def __init__ (self, universe, actions, tau_label="_None"):
         """
         Input:
@@ -165,7 +166,7 @@ class ARCTL_model_checker(CTL_model_checker):
         else:
             self.tau_label = None
         CTL_model_checker.__init__(self, universe, reduce(shom.__or__, [action for (action, labels) in self.actions.items()]))
-        self.logic = "ARCTL"
+        self.logic = "FARCTL"
 
     def alpha_parse(self, alpha, labels):
         if self.tau_label in labels:
