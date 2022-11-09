@@ -1,16 +1,16 @@
-# Python CTL model checker
+# Python FARCTL symbolic model checker
 
-Given a model (the symbolic representation of the statespace and the transition relation) build an object able to symbolically compute the set of states satistfying a formula (CTL, Fair CTL, wip : ACTL and ARCTL).  
+Given a model (the symbolic representation of the statespace and the transition relation) build an object able to symbolically compute the set of states satistfying an (FAR)CTL formula.  
 
 ## Requirement
- - `pyddd` [https://github.com/fpom/pyddd](https://github.com/fpom/pyddd)
- - `pytl` [https://github.com/fpom/pytl](https://github.com/fpom/pytl)
+ - `pyddd` [https://github.com/fpom/pyddd](https://github.com/fpom/pyddd) (Python binding for libDDD)
+ - `pytl` [https://github.com/fpom/pytl](https://github.com/fpom/pytl) (Python parser and translator for varied temporal logics)
 
 ## Usage
 
 The symbolic representation of the model must be :
  - a sdd for the state space (see [pyddd](https://github.com/fpom/pyddd))
- - a shom for the precedence relation (see [pyddd](https://github.com/fpom/pyddd))
+ - a shom (for CTL) or a dict linking list of label strings to shoms (for (F)ARCTL) for the precedence relation (see [pyddd](https://github.com/fpom/pyddd))
 
 Instantiated with such symbolic representation, the object can be called with the method check on a formula (represented by a string which will be parsed by [pytl](https://github.com/fpom/pytl) or by a `pytl.Phi` object). 
 The method `check` returns the sdd representing the states that satisfy the formula.
@@ -18,72 +18,52 @@ The method `check` returns the sdd representing the states that satisfy the form
 
 Example :
 
-        from pymc import CTL_model_checker, FairCTL_model_checker
-        %run -m ecco termites-simpler.rr
-        v = model("test",split=False, force=True)
-        formula = "AF E(Sd U Fg & Te)"
-        CTL_mc = CTL_model_checker(v.g.reachable, v.g.m.succ())
-        FairCTL_mc = FairCTL_model_checker(v.g.reachable, v.g.m.succ(),["~Ac"])
-        print(v.g.initial<=CTL_mc.check(formula))
-        print(v.g.initial<=FairCTL_mc.check(formula))
+        from pymc import CTL_model_checker, FARCTL_model_checker
+        %run -m ecco Borana_model_ARCTL.rr
+        G = model(compact=False, split=False)
+        
+        CTL_mc = CTL_model_checker(G.lts.states, G.lts.pred)
+        formula_CTL = 'EG(Gr)'
+        print(G.lts.init<=CTL_mc.check(formula_CTL))
+        
+        actions = dict()
+        for rule in G.model.spec.rules:
+            rname = rule.name()
+            if G.model.spec.labels.get(rname):
+                labels = [l.strip() for l in G.model.spec.labels[rname].split(",")]
+            else:
+                labels = []
+            labels.append(rname)
+            actions[G.lts.tpred[rname]] = labels
+        FARCTL_mc = FARCTL_model_checker(G.lts.states, actions)
+        formula_FARCTL = '{~("Fb-" | "Wl+")}[WFAIR {"Ig+"}]AF(~Gr)'
+        print(G.lts.init<=FARCTL_mc.check(formula_FARCTL))
 
 
-### CTL
+### FARCTL
 
-Implement the algorithm of Symbolic Model Checking, McMillan 1993, section 2.4.
-
-The syntax of formulae is described at [pytl](https://github.com/fpom/pytl) :
+The syntax of FARCTL formula is defined by [pytl](https://github.com/fpom/pytl) :
     
-    phi ::= quantifier unarymod phi
-         |  quantifier phi binarymod phi
-         |  phi boolop phi
+    phi ::= "(" phi ")"
          |  "~" phi
-         |  "(" phi ")"
-         |  atom
-
-    quantifier ::= "A" | "E"
-    
-    unarymod ::= "X" | "F" | "G"
-    
-    boolop ::= "&" | "|" | "=>" | "<=>"
-    
-    binarymod ::= "U" | "R"
-    
-    atom ::= /\w+|"[^"]+"|'[^']+'/
-
-### Fair CTL
-
-Implement the algorithm of Symbolic Model Checking, McMillan 1993, section 6.4 and Symbolic model checking: 1020 states and beyond, Burch et al 1992, section 6.2.
-
-The evaluation of the formula is restricter to the trajectoriers verifying fairness constraints of the form `AND([GF f for f in fairness])`.
-An additional argument must be given at initialization, representing the fairness constraints :
- - a list of strings, Phi objects or sdd, representing the list of fairness constraints : [f1, f2,...]
- - a single string, Phi or sdd, representing a single fairness constraint
-
-### ARCTL
-
-The syntax of formulae is described at [pytl](https://github.com/fpom/pytl) :
-    
-    phi ::= quantifier unarymod phi
-         |  quantifier phi binarymod phi
+         |  quantifier phi
+         |  unarymod phi
          |  phi boolop phi
-         |  "~" phi
-         |  "(" phi ")"
+         |  phi binarymod phi
          |  atom
 
     quantifier ::= ("A" | "E") ("{" actions "}")?
     
-    unarymod ::= "X" | "F" | "G"
+    unarymod ::= ("X" | "F" | "G") ("{" actions "}")?
     
     boolop ::= "&" | "|" | "=>" | "<=>"
     
-    binarymod ::= "U" | "R"
+    binarymod ::= ("{" actions "}")? ("U" | "R" | "W" | "M") ("{" actions "}")?
     
-    atom ::= /\w+|"[^"]+"|'[^']+'/
+    atom ::= /\w+|"[^\"]+"|'[^\']+'/
     
     actions ::= "(" actions ")"
         | "~" actions
         | actions boolop actions
         | atom
-        
-### FairARCTL
+
