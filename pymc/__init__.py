@@ -189,6 +189,7 @@ class FARCTL_model_checker(CTL_model_checker):
         else:
             raise ValueError(repr(alpha) + "is not an action sub formula")
     
+    # TODO: put the result of build_pred_alpha in cache in order to prevent computing again a pred already known, I cannot do it easily because Phi are not hashable
     def build_pred_alpha(self, alpha):
         return reduce(shom.__or__, [action for (action, labels) in self.actions.items() if self.alpha_parse(alpha, labels)], shom.empty())
 
