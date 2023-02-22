@@ -182,13 +182,13 @@ class FARCTL_model_checker(CTL_model_checker):
             return alpha.value in labels
         elif alpha.kind == 'not':
             return not(self.alpha_parse(alpha.children[0], labels))
-        elif alpha.kind =='and':
+        elif alpha.kind=='and':
             return reduce(bool.__and__, [self.alpha_parse(child, labels) for child in alpha.children], True)
         elif alpha.kind =='or':
             return reduce(bool.__or__, [self.alpha_parse(child, labels) for child in alpha.children], False)
         else:
             raise ValueError(repr(alpha) + "is not an action sub formula")
-            
+    
     def build_pred_alpha(self, alpha):
         return reduce(shom.__or__, [action for (action, labels) in self.actions.items() if self.alpha_parse(alpha, labels)], shom.empty())
 
@@ -205,17 +205,17 @@ class FARCTL_model_checker(CTL_model_checker):
             formula = parse(formula).arctl()
         return self._phi2sdd(formula)
 
-    def _EXevent(self, pred_alpha, event):
+    def _EXevent(self, alpha, event):
         if event.kind == "actions":# \exists_{\alpha \land \Event{\Actions}} \X Z
-            return lambda phi : CTL_model_checker(self.CTL_True, pred_alpha & self.build_pred_alpha(event.children[0])).unarymod["EX"](phi)
+            return lambda phi : CTL_model_checker(self.CTL_True, self.build_pred_alpha(Phi("and", alpha, event.children[0]))).unarymod["EX"](phi)
         else:# \Event{\States} \land (\exists_\alpha \X Z \lor \neg \exists_\alpha \X \top)
-            return lambda phi : self._phi2sdd(event) & (CTL_model_checker(self.CTL_True, pred_alpha).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock)
+            return lambda phi : self._phi2sdd(event) & (CTL_model_checker(self.CTL_True, self.build_pred_alpha(alpha)).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, self.build_pred_alpha(alpha)).deadlock)
         
-    def _EXnotevent(self, pred_alpha, event):
+    def _EXnotevent(self, alpha, event):
         if event.kind == "actions":# \exists_{\alpha \land \neg\Event{\Actions}} \X Z \lor \neg\exists_\alpha \X \top
-            return lambda phi : CTL_model_checker(self.CTL_True, pred_alpha & self.build_pred_alpha(Phi("not", event.children[0]))).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock
+            return lambda phi : CTL_model_checker(self.CTL_True, self.build_pred_alpha(Phi("and", alpha, Phi("not", event.children[0])))).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, self.build_pred_alpha(alpha)).deadlock
         else:# \neg\Event{\States} \land (\exists_\alpha \X Z \lor \neg \exists_\alpha \X \top)
-            return lambda phi : self.neg(self._phi2sdd(event)) & (CTL_model_checker(self.CTL_True, pred_alpha).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, pred_alpha).deadlock)
+            return lambda phi : self.neg(self._phi2sdd(event)) & (CTL_model_checker(self.CTL_True, self.build_pred_alpha(alpha)).unarymod["EX"](phi) | CTL_model_checker(self.CTL_True, self.build_pred_alpha(alpha)).deadlock)
         
     def _fairunarymod(self, pred, EG_fair):
         mc = CTL_model_checker(EG_fair(self.CTL_True), pred)
@@ -244,14 +244,16 @@ class FARCTL_model_checker(CTL_model_checker):
     def _phi2sdd(self, phi):
         if phi.actions:
             pred = self.build_pred_alpha(phi.actions)
+            alpha = phi.actions
         else:
             pred = self.EX
+            alpha = Phi("bool", value=True)
         if phi.ufair or phi.wfair or phi.sfair:
             for f in phi.sfair:
                 assert f.condition.kind != "actions", "Action event not allowed in condition of strong fairness"
-            tau_ufair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(pred, f.then)(Z)) for f in phi.ufair], self.CTL_True)
-            tau_wfair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & (self._EXnotevent(pred, f.condition)(Z) | self._EXevent(pred, f.then)(Z))) for f in phi.wfair], self.CTL_True)
-            tau_sfair = lambda Z: reduce(sdd.__and__, [self._EXnotevent(pred, f.condition)(Z) | CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(pred, f.then)(Z)) for f in phi.sfair], self.CTL_True)
+            tau_ufair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(alpha, f.then)(Z)) for f in phi.ufair], self.CTL_True)
+            tau_wfair = lambda Z: reduce(sdd.__and__, [CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & (self._EXnotevent(alpha, f.condition)(Z) | self._EXevent(alpha, f.then)(Z))) for f in phi.wfair], self.CTL_True)
+            tau_sfair = lambda Z: reduce(sdd.__and__, [self._EXnotevent(alpha, f.condition)(Z) | CTL_model_checker(self.CTL_True, pred).binarymod["EU"](Z, Z & self._EXevent(alpha, f.then)(Z)) for f in phi.sfair], self.CTL_True)
             EG_fair = lambda phi: CTL_model_checker(self.CTL_True, pred).binarymod["EU"](phi, self.gfp(lambda Z: phi & tau_ufair(Z) & tau_wfair(Z) & tau_sfair(Z)))
             if not(EG_fair(self.CTL_True)):
                 print(f"WARNING: No fair {phi.actions}-path exists for {''.join([f'[UFAIR {f.then}]' for f in phi.ufair])}{''.join([f'[WFAIR {f.condition} THEN {f.then}]' for f in phi.wfair])}{''.join([f'[SFAIR {f.condition} THEN {f.then}]' for f in phi.sfair])}")
