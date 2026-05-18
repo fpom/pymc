@@ -22,6 +22,6 @@ setup(
     python_requires=">=3.7",
     install_requires=[
         "pytl @ git+https://github.com/fpom/pytl.git",
-        "pyddd @ git+https://github.com/fpom/cunf-ptnet-py3.git",
+        "pyddd @ git+https://github.com/fpom/pyddd.git",
     ],
 )
